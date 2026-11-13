@@ -19,6 +19,9 @@ interface Props {
   onChange: (v: string) => void;
   onReset: (v: string) => void;
   editorRef?: RefObject<JsonEditorHandle | null>;
+  /** Identifies the loaded document; a new key starts a fresh undo history. */
+  historyKey?: number;
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
   /** Selected node path (for breadcrumbs); null hides the bar. */
   selectedPath?: string | null;
   onSelectPath?: (path: string) => void;
@@ -55,6 +58,8 @@ export default function InputPanel({
   onChange,
   onReset,
   editorRef,
+  historyKey,
+  onHistoryChange,
   selectedPath,
   onSelectPath,
   onDeselect,
@@ -165,6 +170,8 @@ export default function InputPanel({
           ref={editorRef}
           value={value}
           onChange={onChange}
+          historyKey={historyKey}
+          onHistoryChange={onHistoryChange}
           fontSize={fontSize}
           onUserSelect={(offset) => {
             if (onCursor) onCursor(offset);

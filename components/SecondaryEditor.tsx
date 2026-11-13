@@ -1,7 +1,9 @@
 "use client";
 
+import type { RefObject } from "react";
 import { X } from "lucide-react";
 import InputPanel from "./InputPanel";
+import type { JsonEditorHandle } from "./JsonEditor";
 import { ConsoleProvider } from "./console";
 import type { Workspace } from "@/lib/persist";
 
@@ -14,6 +16,8 @@ export default function SecondaryEditor({
   value,
   onChange,
   onReset,
+  historyKey,
+  editorRef,
   workspaces,
   activeId,
   onSwitch,
@@ -27,6 +31,9 @@ export default function SecondaryEditor({
   value: string;
   onChange: (v: string) => void;
   onReset: (v: string) => void;
+  /** Identifies the loaded document; a new key starts a fresh undo history. */
+  historyKey: number;
+  editorRef?: RefObject<JsonEditorHandle | null>;
   workspaces: Workspace[];
   activeId: string;
   onSwitch: (id: string) => void;
@@ -52,6 +59,8 @@ export default function SecondaryEditor({
           value={value}
           onChange={onChange}
           onReset={onReset}
+          historyKey={historyKey}
+          editorRef={editorRef}
           workspaces={workspaces}
           activeId={activeId}
           onSwitchWorkspace={onSwitch}

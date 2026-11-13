@@ -59,6 +59,16 @@ function nameFromPath(path: string): string {
   return m[3] ?? "subtree";
 }
 
+/** True for elements with their own text undo (inputs, editors). */
+function isTextEntry(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA")
+  );
+}
+
 /** True when the viewport is at the `lg` breakpoint (1024px) or wider. */
 function useIsDesktop() {
   const [desktop, setDesktop] = useState(false);
@@ -90,7 +100,17 @@ export default function Page() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const inputEditor = useRef<JsonEditorHandle | null>(null);
+  const rightEditor = useRef<JsonEditorHandle | null>(null);
   const { prefs, setPref } = usePreferences();
+
+  // Undo/redo for the toolbar: the left editor's history (its only undo stack).
+  const [undoState, setUndoState] = useState({ canUndo: false, canRedo: false });
+  const onHistoryChange = useCallback(
+    (canUndo: boolean, canRedo: boolean) => setUndoState({ canUndo, canRedo }),
+    [],
+  );
+  const undo = useCallback(() => inputEditor.current?.undo(), []);
+  const redo = useCallback(() => inputEditor.current?.redo(), []);
 
   // Zen mode swaps the whole app to its Japanese-style typefaces (globals.css).
   useEffect(() => {
@@ -170,17 +190,22 @@ export default function Page() {
         // Search the opened document.
         e.preventDefault();
         setQueryOpen((o) => (k === "f" ? true : !o));
-      } else if (k === "z" && !e.shiftKey) {
+      } else if (k === "z" || k === "y") {
+        // Editors handle their own undo/redo keys (and mark them handled). This
+        // only covers presses with focus elsewhere, e.g. on a toolbar button —
+        // other text fields keep their native undo.
+        if (e.defaultPrevented || isTextEntry(e.target)) return;
+        const editor =
+          (focusedRef.current === 1 && rightEditor.current) || inputEditor.current;
+        if (!editor) return;
         e.preventDefault();
-        history.undo();
-      } else if ((k === "z" && e.shiftKey) || k === "y") {
-        e.preventDefault();
-        history.redo();
+        if (k === "z" && !e.shiftKey) editor.undo();
+        else editor.redo();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [history]);
+  }, []);
 
   // Show onboarding on first visit.
   useEffect(() => {
@@ -601,6 +626,8 @@ export default function Page() {
         onChange={history.set}
         onReset={history.set}
         editorRef={inputEditor}
+        historyKey={history.key}
+        onHistoryChange={onHistoryChange}
         selectedPath={selectedPath}
         onSelectPath={onSelectPath}
         onDeselect={() => setSelectedPath(null)}
@@ -657,6 +684,8 @@ export default function Page() {
                 value={historyB.value}
                 onChange={historyB.set}
                 onReset={historyB.set}
+                historyKey={historyB.key}
+                editorRef={rightEditor}
                 workspaces={groupWorkspaces(1)}
                 activeId={rightActiveId}
                 onSwitch={(id) => openInGroup(id, 1)}
@@ -696,10 +725,10 @@ export default function Page() {
         value={{
           value: history.value,
           onReset: history.set,
-          onUndo: history.undo,
-          onRedo: history.redo,
-          canUndo: history.canUndo,
-          canRedo: history.canRedo,
+          onUndo: undo,
+          onRedo: redo,
+          canUndo: undoState.canUndo,
+          canRedo: undoState.canRedo,
         }}
       >
       <SidebarToggleProvider
@@ -719,10 +748,10 @@ export default function Page() {
           onSelect={setActive}
           showTreeToggle={showTree && !prefs.zenMode}
           onToggleTree={() => setMobileTreeOpen((o) => !o)}
-          onUndo={history.undo}
-          onRedo={history.redo}
-          canUndo={history.canUndo}
-          canRedo={history.canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={undoState.canUndo}
+          canRedo={undoState.canRedo}
           onOpenHelp={() => setOnboardOpen(true)}
           preferences={
             <Preferences

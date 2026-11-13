@@ -2,12 +2,27 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
-import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import CodeMirror, {
+  ExternalChange,
+  type ReactCodeMirrorRef,
+} from "@uiw/react-codemirror";
+import {
+  history,
+  historyField,
+  isolateHistory,
+  redo as redoCommand,
+  redoDepth,
+  undo as undoCommand,
+  undoDepth,
+} from "@codemirror/commands";
 import { json } from "@codemirror/lang-json";
 import {
   EditorView,
@@ -20,7 +35,9 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import {
+  Compartment,
   EditorSelection,
+  EditorState,
   RangeSetBuilder,
   Prec,
   StateEffect,
@@ -54,6 +71,9 @@ export interface JsonEditorHandle {
     matches: { from: number; to: number }[],
     active: number,
   ) => void;
+  /** Undo / redo in this editor's history (the document's only undo stack). */
+  undo: () => void;
+  redo: () => void;
 }
 
 interface Props {
@@ -68,6 +88,14 @@ interface Props {
   fontSize?: number;
   /** Fired when the user (not code) moves the cursor; gives the head offset. */
   onUserSelect?: (offset: number) => void;
+  /**
+   * Identifies the loaded document. When it changes, a different document
+   * (e.g. another workspace) was loaded and undo history starts fresh; while
+   * it stays the same, history survives the editor remounting (tool switch).
+   */
+  historyKey?: number;
+  /** Fired when undo / redo become available or unavailable. */
+  onHistoryChange?: (canUndo: boolean, canRedo: boolean) => void;
 }
 
 const wrap = EditorView.lineWrapping;
@@ -320,6 +348,34 @@ const commentKeymap = Prec.high(
   ]),
 );
 
+// Undo / redo keys. CodeMirror's history is the document's only undo stack
+// (the toolbar buttons call into it too). On macOS Ctrl works as well as Cmd.
+// preventDefault marks the key handled even when there's nothing to undo, so
+// the page-level shortcut and the browser's native undo leave it alone.
+const undoKeymap = keymap.of([
+  { key: "Mod-z", run: undoCommand, preventDefault: true },
+  { key: "Mod-Shift-z", run: redoCommand, preventDefault: true },
+  { key: "Mod-y", run: redoCommand, preventDefault: true },
+  { mac: "Ctrl-z", run: undoCommand, preventDefault: true },
+  { mac: "Ctrl-Shift-z", run: redoCommand, preventDefault: true },
+  { mac: "Ctrl-y", run: redoCommand, preventDefault: true },
+]);
+
+// Changes from outside the editor (tools, loading a file) are their own undo
+// step instead of merging into the typing just before them.
+const isolateExternalChanges = EditorState.transactionExtender.of((tr) =>
+  tr.annotation(ExternalChange) ? { annotations: isolateHistory.of("full") } : null,
+);
+
+// Latest editor state per document (`historyKey`), so undo history survives
+// the editor remounting — switching tools re-creates it. Most recent last.
+const savedStates = new Map<number, EditorState>();
+function saveState(key: number, state: EditorState) {
+  savedStates.delete(key);
+  savedStates.set(key, state);
+  if (savedStates.size > 8) savedStates.delete(savedStates.keys().next().value!);
+}
+
 const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
   {
     value,
@@ -330,6 +386,8 @@ const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
     language = "json",
     fontSize = 13,
     onUserSelect,
+    historyKey,
+    onHistoryChange,
   },
   handleRef,
 ) {
@@ -338,6 +396,60 @@ const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
   const zen = useZen();
   const onUserSelectRef = useRef(onUserSelect);
   onUserSelectRef.current = onUserSelect;
+  const onHistoryChangeRef = useRef(onHistoryChange);
+  onHistoryChangeRef.current = onHistoryChange;
+  const historyKeyRef = useRef(historyKey);
+
+  // Undo history lives in a compartment so it can be dropped when another
+  // document is loaded.
+  const [historyCompartment] = useState(() => new Compartment());
+  // History from an earlier mount of this same document, if any.
+  const [restoredHistory] = useState(() => {
+    if (historyKey === undefined) return undefined;
+    const saved = savedStates.get(historyKey);
+    return saved && saved.doc.toString() === value
+      ? saved.field(historyField, false)
+      : undefined;
+  });
+
+  const reported = useRef("");
+  const reportHistory = useCallback((state: EditorState) => {
+    const canUndo = undoDepth(state) > 0;
+    const canRedo = redoDepth(state) > 0;
+    const k = `${canUndo}/${canRedo}`;
+    if (k === reported.current) return;
+    reported.current = k;
+    onHistoryChangeRef.current?.(canUndo, canRedo);
+  }, []);
+
+  // Unmounted: nothing to undo here any more (a remount reports again).
+  useLayoutEffect(
+    () => () => {
+      reported.current = "";
+      onHistoryChangeRef.current?.(false, false);
+    },
+    [],
+  );
+
+  // A different document was loaded: show it without recording an undo step,
+  // and drop the old document's history so undo can't bring its content back.
+  // (A layout effect, so it runs before the CodeMirror wrapper syncs `value`.)
+  useLayoutEffect(() => {
+    const prev = historyKeyRef.current;
+    if (prev === historyKey) return;
+    historyKeyRef.current = historyKey;
+    if (prev !== undefined) savedStates.delete(prev);
+    const view = ref.current?.view;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    view.dispatch({
+      changes:
+        current === value ? [] : { from: 0, to: current.length, insert: value },
+      effects: historyCompartment.reconfigure([]),
+      annotations: ExternalChange.of(true),
+    });
+    view.dispatch({ effects: historyCompartment.reconfigure(history()) });
+  }, [historyKey, value, historyCompartment]);
 
   useImperativeHandle(handleRef, () => ({
     focusRange(from: number, to: number, opts?: { focus?: boolean }) {
@@ -370,6 +482,14 @@ const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
         effects: setFindMatchesEffect.of(Decoration.set(ranges, true)),
       });
     },
+    undo() {
+      const view = ref.current?.view;
+      if (view) undoCommand(view);
+    },
+    redo() {
+      const view = ref.current?.view;
+      if (view) redoCommand(view);
+    },
   }));
 
   const extensions = useMemo(() => {
@@ -379,6 +499,12 @@ const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
       commentKeymap,
       findMatchesField,
       findTheme,
+      historyCompartment.of(
+        restoredHistory
+          ? [historyField.init(() => restoredHistory), history()]
+          : history(),
+      ),
+      isolateExternalChanges,
       EditorView.updateListener.of((u) => {
         if (
           u.selectionSet &&
@@ -386,8 +512,13 @@ const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
         ) {
           onUserSelectRef.current?.(u.state.selection.main.head);
         }
+        if (historyKeyRef.current !== undefined) {
+          saveState(historyKeyRef.current, u.state);
+        }
+        reportHistory(u.state);
       }),
     ];
+    if (!readOnly) ext.push(undoKeymap);
     if (language === "json") {
       // foldGutter added here (after the line numbers) so the fold chevrons
       // sit to the right of the row numbers.
@@ -404,7 +535,7 @@ const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
       if (zen) ext.push(...zenEditorExtensions);
     }
     return ext;
-  }, [language, zen]);
+  }, [language, zen, readOnly, historyCompartment, restoredHistory, reportHistory]);
 
   // Re-apply diagnostics whenever markers change.
   useEffect(() => {
@@ -436,6 +567,14 @@ const JsonEditor = forwardRef<JsonEditorHandle, Props>(function JsonEditor(
         autocompletion: false,
         highlightActiveLineGutter: !readOnly,
         searchKeymap: false, // Cmd/Ctrl+F opens our unified Find modal instead
+        history: false, // provided explicitly (historyCompartment)
+        historyKeymap: false, // provided explicitly (undoKeymap)
+      }}
+      onCreateEditor={(view) => {
+        if (historyKeyRef.current !== undefined) {
+          saveState(historyKeyRef.current, view.state);
+        }
+        reportHistory(view.state);
       }}
       onChange={onChange}
       style={{ height: "100%", fontSize }}
