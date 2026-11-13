@@ -947,7 +947,7 @@ function Header({
 
   return (
     <header className="sticky top-0 z-40 flex shrink-0 flex-col gap-2 border-b border-border bg-bg-soft/90 px-3 py-2 backdrop-blur sm:flex-row sm:items-center">
-      <div className="flex items-center gap-2.5">
+      <div className="flex shrink-0 items-center gap-2.5 whitespace-nowrap">
         {showTreeToggle && (
           <button
             onClick={onToggleTree}
@@ -971,8 +971,8 @@ function Header({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:ml-auto">
-        <nav data-tour="tools" className="hidden gap-1 overflow-x-auto sm:flex">
+      <div className="flex min-w-0 items-center gap-2 sm:ml-auto">
+        <nav data-tour="tools" className="hidden min-w-0 gap-1 overflow-x-auto sm:flex">
           {TOOLS.map((t) => (
             <Tooltip key={t.id} text={t.info}>
               <button
@@ -985,7 +985,8 @@ function Header({
                     : "text-gray-400 hover:bg-bg-softer hover:text-gray-200"
                 }`}
               >
-                <t.icon size={15} />
+                {/* Icons only where there's room for all the tool tabs. */}
+                <t.icon size={15} className="hidden xl:block" />
                 {t.label}
               </button>
             </Tooltip>

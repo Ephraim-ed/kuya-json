@@ -66,6 +66,12 @@ const STEPS: Step[] = [
     desc: "Sort keys, flatten/unflatten dot-notation, or merge in a second document.",
   },
   {
+    id: "tool-connstring",
+    target: '[data-tour="tool-connstring"]',
+    title: "Conn String",
+    desc: "Paste a .NET connection string (Snowflake, SQL Server, Postgres…) to read and edit it as JSON, setting by setting — then copy it back, quotes and all.",
+  },
+  {
     id: "sidebar",
     target: '[data-tour="sidebar"]',
     title: "Workspaces & Tree",

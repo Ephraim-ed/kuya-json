@@ -6,6 +6,7 @@ import {
   GitCompare,
   FileCheck,
   Wand2,
+  Plug,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import type { ToolMeta, ToolProps } from "./types";
@@ -18,6 +19,7 @@ const ConvertTool = dynamic(() => import("./ConvertTool"), { ssr: false });
 const DiffTool = dynamic(() => import("./DiffTool"), { ssr: false });
 const SchemaTool = dynamic(() => import("./SchemaTool"), { ssr: false });
 const TransformTool = dynamic(() => import("./TransformTool"), { ssr: false });
+const ConnStringTool = dynamic(() => import("./ConnStringTool"), { ssr: false });
 
 export const TOOLS: (ToolMeta & { component: ComponentType<ToolProps> })[] = [
   {
@@ -63,5 +65,12 @@ export const TOOLS: (ToolMeta & { component: ComponentType<ToolProps> })[] = [
     icon: Wand2,
     component: TransformTool,
     info: "Restructure the document in place: sort keys, flatten to dot-notation or unflatten back, or merge a second document using deep / last-wins / first-wins strategies.",
+  },
+  {
+    id: "connstring",
+    label: "Conn String",
+    icon: Plug,
+    component: ConnStringTool,
+    info: "Turn a .NET connection string (Snowflake, SQL Server, Postgres…) into JSON to read and edit it setting by setting, and back. Paste it as it appears in your code, quotes and all; Copy returns it the same way. Nothing here is saved after you reload.",
   },
 ];

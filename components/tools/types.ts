@@ -16,7 +16,8 @@ export type ToolId =
   | "convert"
   | "diff"
   | "schema"
-  | "transform";
+  | "transform"
+  | "connstring";
 
 export interface ToolMeta {
   id: ToolId;

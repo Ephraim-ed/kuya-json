@@ -3,18 +3,51 @@
 import { KuyaLogoMark } from "./KuyaLogo";
 import { useTheme } from "./theme";
 
+// Hockey mask colours: off-white moulded shell, its shading and edge, and
+// the straps and breathing holes.
+const SHELL = "#F5F2EA";
+const SHELL_SHADE = "#E2DCCD";
+const SHELL_EDGE = "#C9C1AE";
+const STRAP = "#3A3F47";
+const VENT = "#5B4636";
+
+// Breathing holes on the forehead.
+const FOREHEAD_VENTS: [number, number][] = [
+  [168, 70], [180, 68], [192, 70], [174, 79], [186, 79],
+];
+
+/** Mouth breathing holes along a smile (or a frown), so he keeps his expression. */
+function mouthVents(sad: boolean): [number, number][] {
+  return [0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => {
+    const bend = 26 * t * (1 - t);
+    return [166 + 28 * t, sad ? 141 - bend : 130 + bend];
+  });
+}
+
+/** A closed ellipse path centred on (cx, cy), tilted by `deg` degrees. */
+function ellipsePath(cx: number, cy: number, rx: number, ry: number, deg = 0) {
+  const t = (deg * Math.PI) / 180;
+  const dx = +(rx * Math.cos(t)).toFixed(2);
+  const dy = +(rx * Math.sin(t)).toFixed(2);
+  const arc = `a${rx},${ry} ${deg} 1,0`;
+  return `M${cx - dx},${cy - dy} ${arc} ${2 * dx},${2 * dy} ${arc} ${-2 * dx},${-2 * dy} Z`;
+}
+
 /**
- * "Kuya" — a friendly mascot in a Kuya JSON logo tee, holding a JSON laptop.
- * Sleeps (lying on a pillow) in dark mode; can be sad. Drawn on the 360×620 rig from
- * public/mascot/kuya/01-neutral.svg and cropped to a bust (or just the head
- * at small sizes, where the body would be unreadable).
+ * "Kuya" — a friendly mascot in a hockey mask and a Kuya JSON logo tee, holding
+ * a JSON laptop. Sleeps (lying on a pillow) in dark mode; can be sad. Drawn on the
+ * 360×620 rig from public/mascot/kuya/01-neutral.svg and cropped to a bust (or
+ * just the head at small sizes, where the body would be unreadable).
  */
 export default function KuyaSprite({
   size = 104,
   mood = "default",
+  masked = true,
 }: {
   size?: number;
   mood?: "default" | "sad";
+  /** Wear the hockey mask (covers the face; eyes show through). */
+  masked?: boolean;
 }) {
   const { theme } = useTheme();
   const sad = mood === "sad";
@@ -271,6 +304,51 @@ export default function KuyaSprite({
             d="M177,123 Q180,111 183,123 Q180,127 177,123 Z"
             fill="#C48A4E"
           />
+
+          {/* Hockey mask: a goalie-style shell over the face, strapped on at
+              the sides. It hides the brows and mouth, so the eye holes tilt
+              and the mouth holes curve to show his mood. */}
+          {masked && (
+            <g>
+              <g {...limb} stroke={STRAP} strokeWidth="5">
+                <path d="M146,82 L136,80 M214,82 L224,80" />
+                <path d="M148,130 L138,126 M212,130 L222,126" />
+              </g>
+              <path
+                fillRule="evenodd"
+                fill={SHELL}
+                stroke={SHELL_EDGE}
+                strokeWidth="2"
+                strokeLinejoin="round"
+                d={[
+                  "M180,57 Q215,57 216,92 L216,118 Q216,150 180,157 Q144,150 144,118 L144,92 Q145,57 180,57 Z",
+                  ellipsePath(163, 107, 11.5, 8.5, sad ? -12 : 0),
+                  ellipsePath(197, 107, 11.5, 8.5, sad ? 12 : 0),
+                ].join(" ")}
+              />
+              {/* Shading down the right side and along the nose ridge */}
+              <path
+                d="M205,62 Q215,70 215,92 L215,118 Q215,146 186,155 Q206,140 207,116 L207,92 Q207,72 205,62 Z"
+                fill={SHELL_SHADE}
+              />
+              <path
+                d="M180,98 L180,124"
+                {...limb}
+                stroke={SHELL_SHADE}
+                strokeWidth="4"
+              />
+              <g fill={VENT}>
+                {FOREHEAD_VENTS.map(([x, y]) => (
+                  <ellipse key={`f${x},${y}`} cx={x} cy={y} rx="2.1" ry="2.6" />
+                ))}
+                {mouthVents(sad).map(([x, y]) => (
+                  <circle key={`m${x}`} cx={x} cy={y} r="2.6" />
+                ))}
+                <rect x="150" y="124" width="4" height="9" rx="2" />
+                <rect x="206" y="124" width="4" height="9" rx="2" />
+              </g>
+            </g>
+          )}
 
           {/* Eyes — open & blinking when awake, closed when sleeping */}
           {sleeping ? (
